@@ -22,6 +22,8 @@ The Supabase publishable key is used only to call controlled SQL functions. Tabl
    - `get_summary(...)` RPC function
    - `get_ranking(...)` RPC function
 
+   The backend also has a simple server-side storage cap. By default it stops accepting new transactions after `50` stored transactions.
+
 2. Create local environment variables.
 
    ```bash
@@ -147,6 +149,7 @@ Consistency is also handled in the database:
 
 - Request validation exists in both FastAPI and the SQL function.
 - A user can only create 5 accepted transactions per 10 seconds.
+- The backend stops accepting new transactions after `MAX_STORED_TRANSACTIONS` total stored transactions. The default is `50`, and the allowed config range is `1` to `100`.
 - Ranking caps per-transaction points.
 - Ranking adds a burst penalty for very high short-term activity.
 - Refunds reduce totals and points.
@@ -181,6 +184,7 @@ On Railway:
    ```text
    SUPABASE_URL=<your Supabase project URL>
    SUPABASE_KEY=<your Supabase publishable key>
+   MAX_STORED_TRANSACTIONS=50
    ```
 
 3. Deploy. Railway will run:

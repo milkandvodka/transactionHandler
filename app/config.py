@@ -25,12 +25,19 @@ def load_dotenv(path: str = ".env") -> None:
 class Settings:
     supabase_url: str
     supabase_key: str
+    max_stored_transactions: int = 50
 
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv()
         supabase_url = os.getenv("SUPABASE_URL", "").rstrip("/")
         supabase_key = os.getenv("SUPABASE_KEY", "")
+        max_stored_transactions = _read_int(
+            "MAX_STORED_TRANSACTIONS",
+            default=50,
+            minimum=1,
+            maximum=100,
+        )
 
         missing = [
             name
@@ -44,5 +51,24 @@ class Settings:
             joined = ", ".join(missing)
             raise RuntimeError(f"Missing required environment variable(s): {joined}")
 
-        return cls(supabase_url=supabase_url, supabase_key=supabase_key)
+        return cls(
+            supabase_url=supabase_url,
+            supabase_key=supabase_key,
+            max_stored_transactions=max_stored_transactions,
+        )
 
+
+def _read_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None or raw_value.strip() == "":
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+
+    if value < minimum or value > maximum:
+        raise RuntimeError(f"{name} must be between {minimum} and {maximum}")
+
+    return value

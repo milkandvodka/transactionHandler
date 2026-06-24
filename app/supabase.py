@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from typing import Any
 
@@ -18,6 +19,8 @@ class SupabaseAPIError(Exception):
 
 class SupabaseRepository:
     def __init__(self, settings: Settings) -> None:
+        self._max_stored_transactions = settings.max_stored_transactions
+        self._write_lock = asyncio.Lock()
         self._client = httpx.AsyncClient(
             base_url=settings.supabase_url,
             timeout=httpx.Timeout(10.0),
@@ -32,19 +35,39 @@ class SupabaseRepository:
         await self._client.aclose()
 
     async def record_transaction(self, payload: TransactionRequest) -> dict[str, Any]:
-        data = {
-            "p_request_id": payload.request_id,
-            "p_user_id": payload.user_id,
-            "p_amount": str(payload.amount),
-            "p_transaction_type": payload.transaction_type,
-        }
-        return await self._rpc("record_transaction", data)
+        async with self._write_lock:
+            current_count = await self._count_known_transactions()
+            if current_count >= self._max_stored_transactions:
+                raise SupabaseAPIError(
+                    429,
+                    f"transaction storage limit reached ({self._max_stored_transactions}); cannot insert more",
+                )
+
+            data = {
+                "p_request_id": payload.request_id,
+                "p_user_id": payload.user_id,
+                "p_amount": str(payload.amount),
+                "p_transaction_type": payload.transaction_type,
+            }
+            return await self._rpc("record_transaction", data)
 
     async def get_summary(self, user_id: str) -> dict[str, Any]:
         return await self._rpc("get_summary", {"p_user_id": user_id})
 
     async def get_ranking(self, limit: int) -> dict[str, Any]:
         return await self._rpc("get_ranking", {"p_limit": limit})
+
+    async def _count_known_transactions(self) -> int:
+        ranking = await self.get_ranking(limit=100)
+        items = ranking.get("items", [])
+        if not isinstance(items, list):
+            return 0
+
+        total = 0
+        for item in items:
+            if isinstance(item, dict):
+                total += int(item.get("transaction_count") or 0)
+        return total
 
     async def _rpc(self, function_name: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
